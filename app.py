@@ -143,7 +143,7 @@ def home():
     current_user = get_current_user()
     if current_user:
         profile_data = get_profile_data(current_user)
-        return render_template("dashboard.html", first_name=profile_data['first_name'])
+        return render_template("dashboard.html", first_name=profile_data.get('first_name', ''), jwt_token=session.get('jwt_token'))
     return redirect(url_for("login"))
 
 
@@ -258,6 +258,7 @@ def login():
             session["logged_in"] = True
             session["username"] = uid
             session["email"] = email
+            session["jwt_token"] = token_data.get("idToken")
             return redirect(url_for("home"))
 
         error_data = res.json().get("error", {})
@@ -446,8 +447,9 @@ def api_delete_profile(uid: str):
 
 
 @app.route("/api/sensor_data", methods=["POST"])
+@require_jwt
 @require_api_key
-def api_sensor_data():
+def api_sensor_data(uid: str):
     """Receive sensor data from IoT devices (requires API key authentication)."""
     content_error = require_json_content_type()
     if content_error:

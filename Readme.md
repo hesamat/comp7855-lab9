@@ -1,220 +1,363 @@
 ## **Overview**
 
-In this lab, you are provided with a working Flask API and web application. However, **it is deeply insecure.** Currently, it relies on a hardcoded "dummy" user, uses basic session cookies for API routes, and lacks strict data validation.
+In this lab, you will refactor the existing Flask application for better maintainability using Flask Blueprints and add data visualization to the dashboard using Chart.js.
 
-Your task is to rip out the dummy logic and secure the API using Firebase Authentication (JWTs), Device Identity (API Keys), and strict validation.
+The application already has Firebase Authentication (JWTs), Device Identity (API Keys), and input validation implemented. Your tasks are to:
+
+1. **Modularize the codebase** using Flask Blueprints
+2. **Add a time-series chart** to visualize sensor data on the dashboard
 
 ---
 
-## **Project Structure**
+## **Quick Setup (One-Time)**
+
+1. Install dependencies:
+  - `pip install -r requirements.txt`
+
+2. Set the required environment variables (either in a `.env` file or directly in your shell):
+  - `FIREBASE_WEB_API_KEY` (required for login/signup)
+  - `SENSOR_API_KEY` (required for `/api/sensor_data` POST)
+
+Optional (only if you need them):
+  - `FLASK_SECRET_KEY` (recommended for non-demo deployments; defaults to a dev value)
+  - `FIREBASE_SERVICE_ACCOUNT` (only if your service account file is not `serviceAccountKey.json`)
+
+## **Current Project Structure**
 
 ```
-├── app.py                      # Main Flask application (routes + API)
+├── app.py                      # Main Flask application (all routes + decorators)
+├── config.py                   # Starter: environment variable config
+├── firebase.py                 # Starter: Firebase init + exports db
+├── mock_sensor_data.json       # Starter: time-series sensor data for Task 2
 ├── requirements.txt            # Python dependencies
 ├── serviceAccountKey.json      # Firebase service account credentials
-├── .env                        # Environment variables (create this)
+├── .env                        # Environment variables
 └── templates/
-    ├── login.html              # Login page (username/password form)
-    ├── signup.html             # Signup page (email/password form)
-    ├── dashboard.html          # User dashboard after login
+    ├── login.html              # Login page (form-based)
+    ├── signup.html             # Signup page
+    ├── dashboard.html          # User dashboard (basic, no chart)
     └── profile.html            # Profile creation/edit form
 ```
 
 ---
 
-## **Existing Routes**
+## **Task 1: Modularizing the Code with Flask Blueprints**
 
-### Web Routes (HTML Pages)
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/` | GET | Home - redirects to dashboard if logged in, otherwise to login |
-| `/login` | GET, POST | Login page with dummy credentials |
-| `/signup` | GET, POST | Signup page (you will implement this) |
-| `/profile` | GET, POST | Create/update profile form |
-| `/logout` | GET | Clear session and redirect to login |
+Currently, all routes, decorators, and helper functions are in a single `app.py` file. You will reorganize the code into separate modules using Flask Blueprints.
 
-### API Routes (JSON)
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/profile` | GET | Get current user's profile |
-| `/api/profile` | POST | Create/replace profile (JSON) |
-| `/api/profile` | PUT | Update profile fields (JSON) |
-| `/api/profile` | DELETE | Delete current user's profile |
+### **Target Project Structure**
 
----
+Create the following directory structure:
 
-## **Pre-requisite: Firebase Setup**
-
-To complete this lab, you need two credentials from your Firebase Console.
-
-1. **Service Account Key (`serviceAccountKey.json`):** You should already have this from last week. This allows your Python server to talk to Firestore and verify JWTs using the Admin SDK.
-2. **Web API Key:** *You need this new key to log users in via the REST API.*
-    - Go to your Firebase Console.
-    - Ensure **Authentication** is enabled and the "Email/Password" provider is turned on.
-    - Go to **Project Settings** (gear icon in the top left) -> **General**.
-    - Scroll down to "Your apps".
-    - Click the `</>` (Web) icon to add a web app to your project.
-    - Give it a nickname (e.g., "API Client") and click **Register app**.
-    - Once registered, look for the **Web API Key** listed on the General settings page.
-    - Store this inside your `.env` file as `FIREBASE_WEB_API_KEY=your-key-here`.
-
----
-
-## **Task 1: The Firebase Auth Loop (Human Identity)**
-
-The starter code uses `session.get("logged_in")` to verify users. You must replace this with a stateless, secure JWT implementation.
-
-### **Step 1.1: Registration (Signup)**
-
-The starter code includes a `signup.html` template in the `templates/` folder. You need to create the route handler and wire it up.
-
-#### Web Route: `@app.route("/signup", methods=["GET", "POST"])`
-
-Create a web route that renders the signup form on GET and processes the form on POST:
-
-```python
-@app.route("/signup", methods=["GET", "POST"])
-def signup():
-    if request.method == "GET":
-        return render_template("signup.html")
-
-    email = request.form.get("email")
-    password = request.form.get("password")
-    confirm_password = request.form.get("confirm_password")
-
-    # Validate passwords match
-    if password != confirm_password:
-        return render_template("signup.html", error="Passwords do not match")
-
-    # TODO: Create user with Firebase Admin SDK
-    # TODO: Initialize profile in Firestore
-    # TODO: Redirect to login on success
+```
+├── app.py                      # Main Flask application (creates app, registers blueprints, initializes Firebase)
+├── config.py                   # Configuration settings
+├── firebase.py                 # Firebase initialization and db export
+├── requirements.txt            # Python dependencies
+├── serviceAccountKey.json      # Firebase service account credentials
+├── .env                        # Environment variables
+├── blueprints/
+│   ├── __init__.py
+│   ├── auth/
+│   │   ├── __init__.py         # Exports auth_bp
+│   │   └── routes.py           # login, signup, logout routes
+│   ├── profile/
+│   │   ├── __init__.py         # Exports profile_bp
+│   │   └── routes.py           # profile web routes
+│   ├── dashboard/
+│   │   ├── __init__.py         # Exports dashboard_bp
+│   │   └── routes.py           # home/dashboard routes
+│   └── api/
+│       ├── __init__.py         # Exports api_bp
+│       └── routes.py           # API routes (profile CRUD, sensor_data)
+├── decorators/
+│   ├── __init__.py             # Exports require_jwt, require_api_key
+│   └── auth.py                 # JWT and API key decorators
+├── utils/
+│   ├── __init__.py             # Exports helper functions
+│   ├── auth.py                 # Auth helper functions
+│   ├── profile.py              # Profile helper functions
+│   └── validation.py           # Input validation helpers
+└── templates/
+    ├── login.html
+    ├── signup.html
+    ├── dashboard.html
+    └── profile.html
 ```
 
-#### JSON Route: `@app.route("/signup", methods=["POST"])`
+### **Step 1.1: Review the Provided Starter Files**
 
-For API clients, also create a JSON endpoint:
+Review the starter code already provided for you:
+- **`config.py`**: Manages environment variables like `WEB_API_KEY`. 
+- **`firebase.py`**: Initializes Firestore and exports `db` to prevent circular imports.
 
-Creating a user requires a two-step synchronized process:
+Your task is to import from these existing modules inside your blueprints.
 
-1. Use the Admin SDK to create the identity: `user = auth.create_user(email=email, password=password)`
-2. Immediately initialize their profile in Firestore using the generated `uid` as the Document ID.
+### **Step 1.2: Create the Decorators Module**
 
+Create `decorators/__init__.py` and `decorators/auth.py`. Move `require_api_key(f)` and `require_jwt(f)` from `app.py` into `decorators/auth.py`.
+
+Remember to import the necessary elements in your new file: `request`, `jsonify` from `flask`, `os`, `functools.wraps`, and `firebase_admin.auth`.
+
+### **Step 1.3: Create the Utils Module**
+
+Create `utils/__init__.py`, `utils/auth.py`, `utils/profile.py`, and `utils/validation.py`. Move the corresponding functions from `app.py`.
+- **`utils/auth.py`**: Move `get_current_user`.
+- **`utils/profile.py`**: Move `get_profile_doc_ref`, `get_profile_data`, and `set_profile`. You will need to `from firebase import db` for Firestore access.
+- **`utils/validation.py`**: Move `validate_profile_data`, `normalize_profile_data`, and `require_json_content_type`.
+
+### **Step 1.4: Create the Auth Blueprint**
+
+**File:** `blueprints/auth/__init__.py`
+
+Create and export the blueprint instance:
 ```python
-from firebase_admin import auth
+from flask import Blueprint
 
-db.collection("profiles").document(user.uid).set({
-    "email": email,
-    "role": "user"
-})
+auth_bp = Blueprint('auth', __name__)
+
+# Import routes at the bottom to avoid circular dependencies
+from . import routes
 ```
 
-### **Step 1.2: Login (The Identity REST API)**
+**File:** `blueprints/auth/routes.py`
 
-*Note: The Firebase Admin SDK in Python cannot log a user in with a password.* To generate a JWT, your server must send the user's credentials to the Google Identity Toolkit.
+Move the following functions from `app.py` into this file:
 
-Create a new route: `@app.route("/login", methods=["POST"])`. Use the `requests` library to send the email, password, and your `FIREBASE_WEB_API_KEY`:
+1. **Blueprint Routes** (decorated with `@auth_bp.route`):
+   - `login()` - GET/POST login page
+   - `signup()` - GET/POST signup page
+   - `logout()` - Clear session
 
+2. **Internal Helpers** (called by the routes above):
+   - `api_login()` - helper used inside `login()`
+   - `api_signup()` - helper used inside `signup()`
+
+Example of defining routes in your blueprint:
 ```python
+from flask import request, jsonify, render_template, session, redirect, url_for
+from . import auth_bp
 import requests
-import os
+from config import Config
 
-WEB_API_KEY = os.environ.get("FIREBASE_WEB_API_KEY")
-
-@app.route("/login", methods=["POST"])
-def api_login():
-    data = request.json
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={WEB_API_KEY}"
-    payload = {"email": data["email"], "password": data["password"], "returnSecureToken": True}
-
-    res = requests.post(url, json=payload)
-    if res.status_code == 200:
-        return jsonify({"token": res.json()["idToken"]}), 200
-    return jsonify({"error": "Invalid credentials"}), 401
+@auth_bp.route("/login", methods=["GET", "POST"])
+def login():
+    # ... implementation ...
 ```
 
-### **Step 1.3: Token Verification (Replacing the Dummy User)**
+Note: The login and signup routes should remain at `/login` and `/signup` (no URL prefix).
+You will also need to import `requests`, `session`, `render_template` and retrieve your API key from `config.py` (e.g., `from config import Config` and `Config.WEB_API_KEY`).
 
-Locate `get_user_or_401()` in the starter code. Rewrite it to look for a JWT instead of a session cookie:
+**Important (Blueprint `url_for`)**
+After you move routes into blueprints, endpoint names are namespaced.
+For example:
+- `url_for("login")` becomes `url_for("auth.login")`
+- `url_for("signup")` becomes `url_for("auth.signup")`
+- `url_for("home")` becomes `url_for("dashboard.home")`
 
-1. Extract the `Authorization` header from `request.headers`.
-2. Split the string to get the token (removing "Bearer ").
-3. Use `auth.verify_id_token(token)` from the Firebase Admin SDK.
-4. Return the decoded `uid`. If it fails, return a `401 Unauthorized` tuple.
+### **Step 1.5: Create the Profile Blueprint**
 
-*Test this in Postman by hitting `/login`, copying the `token`, and pasting it into the "Bearer Token" authorization tab for `GET /api/profile`.*
+**File:** `blueprints/profile/__init__.py`
 
----
+Create and export the blueprint instance.
 
-## **Task 2: Implementing Device Identity (API Keys)**
+**File:** `blueprints/profile/routes.py`
 
-IoT hardware nodes cannot log in with passwords. We must use API Keys to authenticate them. To protect routes easily in Flask, we use **Decorators**.
+Move the following route from `app.py`:
+- `profile()` - GET/POST profile form
 
-### **What is a Decorator?**
+Import helper functions from `utils.profile`, `utils.validation`, and `utils.auth`.
 
-A decorator (like `@app.route`) is simply a function that wraps *another* function. It runs some code *before* your route executes. If the request is bad, the decorator can intercept it and return an error before your route logic ever runs.
+### **Step 1.6: Create the Dashboard Blueprint**
 
-### **Instructions:**
+**File:** `blueprints/dashboard/__init__.py`
 
-1. **Generate a secure API key** and add it to your `.env` file.
+Create and export the blueprint instance.
 
-   You can generate a secure random key using Python:
-   ```python
-   import secrets
-   print(secrets.token_hex(32))
-   ```
+**File:** `blueprints/dashboard/routes.py`
 
-   Or using the command line:
-   ```bash
-   # On Linux/Mac
-   openssl rand -hex 32
+Move the following route from `app.py`:
+- `home()` - Root route that renders dashboard
 
-   # On Windows (PowerShell)
-   [Convert]::ToHexString((1..32 | ForEach-Object { Get-Random -Maximum 256 })).ToLower()
-   ```
+Import `get_profile_data` from `utils.profile` and `get_current_user` from `utils.auth`.
 
-   Add the generated key to your `.env` file:
-   ```
-   SENSOR_API_KEY=your-generated-key-here
-   ```
+### **Step 1.7: Create the API Blueprint**
 
-2. Write a Flask Decorator called `@require_api_key`. Use the skeleton below:
+**File:** `blueprints/api/__init__.py`
+
+Create and export the blueprint instance.
+
+**File:** `blueprints/api/routes.py`
+
+Move the following routes from `app.py`:
+- `api_get_profile(uid)` - GET /api/profile
+- `api_create_profile(uid)` - POST /api/profile
+- `api_update_profile(uid)` - PUT /api/profile
+- `api_delete_profile(uid)` - DELETE /api/profile
+- `api_sensor_data(uid)` - POST /api/sensor_data
+
+Import decorators from `decorators` and helper functions from `utils`.
+
+Create the blueprint with `url_prefix='/api'`:
+```python
+from flask import Blueprint
+api_bp = Blueprint('api', __name__, url_prefix='/api')
+```
+
+Note: After adding the prefix, your routes should be defined as:
+- `@api_bp.get("/profile")` instead of `@app.get("/api/profile")`
+
+### **Step 1.8: Update app.py**
+
+**File:** `app.py`
+
+Refactor this file to only contain:
+- Flask app initialization
+- Session configuration
+- Blueprint registration
 
 ```python
-from functools import wraps
-from flask import request, jsonify
-import os
+from flask import Flask
+from config import Config
 
-def require_api_key(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # 1. Grab the expected key from the environment
-        expected_key = os.environ.get("SENSOR_API_KEY")
+# Import blueprints
+from blueprints.auth import auth_bp
+from blueprints.profile import profile_bp
+from blueprints.dashboard import dashboard_bp
+from blueprints.api import api_bp
 
-        # 2. Grab the provided key from the request headers
-        # TODO: Get "X-API-Key" from request.headers
+app = Flask(__name__)
+app.config.from_object(Config)
 
-        # 3. Compare them
-        # TODO: If they don't match, return jsonify({"error": "Unauthorized"}), 401
+# Register blueprints
+app.register_blueprint(dashboard_bp)  # Handles root route /
+app.register_blueprint(auth_bp)
+app.register_blueprint(profile_bp)
+app.register_blueprint(api_bp)
 
-        # 4. If they match, allow the route to execute normally
-        return f(*args, **kwargs)
-    return decorated_function
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
 ```
 
-3. Create a new dummy endpoint: `@app.route("/api/sensor_data", methods=["POST"])`. Apply your `@require_api_key` decorator to it (place it right *under* the `@app.route` decorator).
-4. Test it using Postman by attempting to send data with and without the `X-API-Key` header.
+**Important:** Other modules need access to `db`. Import it from `firebase.py` where needed (e.g. `from firebase import db`). This avoids circular imports previously caused by importing it from `app`.
 
 ---
 
-## **Task 3: Robust Input Validation (Preventing Mass Assignment)**
+## **Task 2: Visualizing Sensor Data with Chart.js**
 
-Currently, `api_update_profile()` in the starter code handles updates, but we need to make it bulletproof.
+### **Background: Handling Continuous Telemetry**
+Our hybrid frontend can securely talk to our API. But how do we handle continuous streams of telemetry?
 
-**Instructions:** Modify the PUT route to implement these defensive concepts:
+**The HTTP Limitation**
+HTTP was built for documents. The client asks, the server answers. The server cannot initiate a conversation with the client. If a sensor detects a fire, the Flask server cannot push that alert to the browser.
 
-1. **Whitelist:** Reject any fields in the JSON payload other than `first_name`, `last_name`, and `student_id`.
-2. **Bounds Checking:**
-    - `first_name` and `last_name` must not exceed 50 characters.
-    - `student_id` must be exactly 8 or 9 alphanumeric characters.
-3. **Collect All Errors:** Instead of failing on the first bad field, check *all* of them. Append any errors to a list, and return a single `400 Bad Request` containing all the errors the user needs to fix at once.
+**Three Solutions for Dashboards:**
+1. **HTTP Polling:** JavaScript asks the server for updates every X seconds. This is simple but can be inefficient.
+2. **WebSockets:** A persistent, two-way TCP pipe. Excellent for low-latency dashboards.
+3. **MQTT:** The IoT industry standard publish/subscribe protocol.
+
+For this lab, you will use **HTTP Polling** alongside Chart.js to visualize time-series sensor data fetched from a local JSON file.
+
+### **Step 2.1: Create a GET Endpoint for Sensor Data**
+
+**File:** `blueprints/api/routes.py`
+
+Add a new route to fetch sensor data:
+
+```
+GET /api/sensor_data
+```
+
+This route should:
+- Require JWT authentication (use `@require_jwt` decorator). Because of this decorator, remember that your route function must accept `uid` as a parameter (e.g., `def api_get_sensor_data(uid):`).
+- Read and parse the `mock_sensor_data.json` file provided in the repository (use Python's `json` module).
+- Return the parsed data as a JSON response.
+
+*(Note: The existing POST route for `/api/sensor_data` is also decorated with `@require_jwt`, so its route handler must accept `uid` too.)*
+
+### **Step 2.2: Update dashboard.html**
+
+**File:** `templates/dashboard.html`
+
+Make the following additions:
+
+1. **Include Chart.js** via CDN in the `<head>` section:
+   ```html
+   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+   ```
+
+2. **Inject the JWT token** via Jinja so your JavaScript can authenticate API requests. Add this before your charting script:
+   ```html
+   <script>
+       const token = "{{ jwt_token }}";
+   </script>
+   ```
+   The `jwt_token` variable is already passed to this template by `home()` in the dashboard blueprint.
+
+3. **Add a canvas element** for the chart:
+   ```html
+   <div class="chart-container">
+       <canvas id="sensorChart"></canvas>
+   </div>
+   ```
+
+4. **Add JavaScript** to:
+   - Fetch sensor data from `/api/sensor_data` using `token` in the `Authorization: Bearer` header
+   - Create a line chart using Chart.js
+   - Display at least two data series (e.g., temperature and humidity)
+   - Use dual Y-axes for different units
+
+### **Step 2.3: Chart Features**
+
+Your chart implementation should include:
+
+1. **Time Series X-Axis:** Display timestamps on the horizontal axis
+2. **Multiple Data Series:** Plot temperature, humidity, or other sensor values
+3. **Dual Y-Axes:** Different scales for different units (°C for temperature, % for humidity)
+4. **Responsive Design:** Chart should resize with the browser window
+5. **Interactive Tooltips:** Show values when hovering over data points
+
+*Hint for Dual Y-Axes:* In Chart.js, configure multiple y-axes in the `scales` options and map datasets using `yAxisID`:
+
+```javascript
+datasets: [
+  { label: 'Temp', data: [...], yAxisID: 'y' },
+  { label: 'Humidity', data: [...], yAxisID: 'y1' }
+],
+options: {
+  scales: {
+    y: { type: 'linear', position: 'left' },
+    y1: { type: 'linear', position: 'right' }
+  }
+}
+```
+
+### **Step 2.4: Implement HTTP Polling**
+Instead of just fetching data once when the page loads, use HTTP polling to repeatedly hit the backend and update your chart.
+
+1. Wrap your data fetching and chart updating logic in an `updateChart()` JavaScript function.
+2. In your JS script, execute `setInterval(updateChart, 5000);` to poll the server every 5 seconds.
+3. *Crucial:* When new data arrives, do not destroy and recreate the `canvas` HTML element. Instead, update `chart.data` properties with the fresh dataset and call `chart.update()`.
+
+---
+
+## **Testing Your Implementation**
+
+### Testing Blueprints
+
+1. All existing routes should work as before:
+   - `/` - Dashboard
+   - `/login` - Login page
+   - `/signup` - Signup page
+   - `/profile` - Profile form
+   - `/api/profile` - Profile API (requires JWT)
+   - `/api/sensor_data` POST - Submit sensor data (requires API key)
+
+2. No functionality should be lost after refactoring.
+
+### Testing Chart.js & Polling
+
+1. Ensure your `mock_sensor_data.json` file is present and properly formatted.
+2. Log in to the web application and view the dashboard.
+3. The chart should display the 50 sensor data points immediately.
+4. Open the Network tab in your browser's Developer Tools and verify that a new `GET` request to `/api/sensor_data` is made exactly every 5 seconds.
