@@ -326,7 +326,7 @@ def profile():
         return render_template("profile.html", profile=profile_data, error=error)
 
     normalized = normalize_profile_data(first_name, last_name, student_id)
-    set_profile(current_user, normalized, merge=False)
+    set_profile(current_user, normalized, merge=True)
     return redirect(url_for("home"))
 
 
@@ -447,7 +447,6 @@ def api_delete_profile(uid: str):
 
 
 @app.route("/api/sensor_data", methods=["POST"])
-@require_jwt
 @require_api_key
 def api_sensor_data(uid: str):
     """Receive sensor data from IoT devices (requires API key authentication)."""
