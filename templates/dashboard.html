@@ -3,16 +3,169 @@
 
 <head>
     <title>Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            margin: 24px;
+            color: #1f2937;
+            background: #f8fafc;
+        }
+
+        .nav {
+            margin-bottom: 20px;
+        }
+
+        .nav a {
+            margin-right: 14px;
+        }
+
+        .chart-container {
+            width: 100%;
+            max-width: 1000px;
+            height: 420px;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        #status {
+            margin-top: 10px;
+            color: #6b7280;
+        }
+    </style>
 </head>
 
 <body>
     <h1>Welcome, {{ first_name }}</h1>
     <p>Use the navigation below to manage your profile.</p>
 
-    <ul>
-        <li><a href="{{ url_for('profile') }}">Create/Update Profile</a></li>
-        <li><a href="{{ url_for('logout') }}">Logout</a></li>
-    </ul>
+    <div class="nav">
+        <a href="{{ url_for('profile.profile') }}">Create/Update Profile</a>
+        <a href="{{ url_for('auth.logout') }}">Logout</a>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="sensorChart"></canvas>
+    </div>
+    <p id="status">Loading sensor data...</p>
+
+    <script>
+        const token = "{{ jwt_token }}";
+
+        const statusEl = document.getElementById("status");
+        const ctx = document.getElementById("sensorChart").getContext("2d");
+
+        const sensorChart = new Chart(ctx, {
+            type: "line",
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: "Temperature (C)",
+                        data: [],
+                        borderColor: "#ef4444",
+                        backgroundColor: "rgba(239, 68, 68, 0.15)",
+                        yAxisID: "yTemp",
+                        tension: 0.25,
+                    },
+                    {
+                        label: "Humidity (%)",
+                        data: [],
+                        borderColor: "#2563eb",
+                        backgroundColor: "rgba(37, 99, 235, 0.15)",
+                        yAxisID: "yHumidity",
+                        tension: 0.25,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: "index",
+                    intersect: false,
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: "Timestamp",
+                        }
+                    },
+                    yTemp: {
+                        type: "linear",
+                        position: "left",
+                        title: {
+                            display: true,
+                            text: "Temperature (C)",
+                        }
+                    },
+                    yHumidity: {
+                        type: "linear",
+                        position: "right",
+                        title: {
+                            display: true,
+                            text: "Humidity (%)",
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        enabled: true,
+                    }
+                }
+            }
+        });
+
+        function parseSensorSeries(payload) {
+            if (Array.isArray(payload)) {
+                return payload;
+            }
+            if (Array.isArray(payload.data)) {
+                return payload.data;
+            }
+            return [];
+        }
+
+        async function updateChart() {
+            try {
+                const response = await fetch("/api/sensor_data", {
+                    method: "GET",
+                    headers: {
+                        "Authorization": `Bearer ${token}`,
+                    },
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Request failed (${response.status})`);
+                }
+
+                const payload = await response.json();
+                const rows = parseSensorSeries(payload);
+
+                const labels = rows.map(row => row.timestamp || "");
+                const temperatureValues = rows.map(row => row.temperature ?? null);
+                const humidityValues = rows.map(row => row.humidity ?? null);
+
+                sensorChart.data.labels = labels;
+                sensorChart.data.datasets[0].data = temperatureValues;
+                sensorChart.data.datasets[1].data = humidityValues;
+                sensorChart.update();
+
+                statusEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+            } catch (error) {
+                statusEl.textContent = `Failed to load sensor data: ${error.message}`;
+            }
+        }
+
+        updateChart();
+        setInterval(updateChart, 5000);
+    </script>
 </body>
 
 </html>
